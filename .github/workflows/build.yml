@@ -1,0 +1,86 @@
+name: Build & Release
+
+on:
+  push:
+    branches: [main, beta]
+    tags: ['v*']
+    paths-ignore:
+      - '**.md'
+      - 'LICENSE'
+      - '.gitignore'
+  pull_request:
+    branches: [main, beta]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: write
+    env:
+      IS_RELEASE: ${{ github.event_name == 'push' && (startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main') }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
+
+      - name: Make gradlew executable
+        run: chmod +x gradlew
+
+      - name: Decode release keystore
+        id: keys
+        if: env.IS_RELEASE == 'true'
+        env:
+          RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+          RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+        run: |
+          if [ -z "${RELEASE_KEYSTORE_BASE64:-}" ] || [ -z "${RELEASE_STORE_PASSWORD:-}" ] \
+             || [ -z "${RELEASE_KEY_PASSWORD:-}" ] || [ -z "${RELEASE_KEY_ALIAS:-}" ]; then
+            if [ "$GITHUB_REPOSITORY" = "wized2/Aariz" ]; then
+              echo "::warning::No signing secrets yet — release APK will be debug-signed until secrets are set."
+            fi
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "$RELEASE_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+          echo "Keystore OK: $(wc -c < "$RUNNER_TEMP/release.jks") bytes"
+          echo "signed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Unit tests and debug build
+        run: ./gradlew testDebugUnitTest assembleDebug --stacktrace
+
+      - name: Build release
+        env:
+          RELEASE_STORE_FILE: ${{ steps.keys.outputs.signed == 'true' && format('{0}/release.jks', runner.temp) || '' }}
+          RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+        run: ./gradlew assembleRelease --stacktrace
+
+      - name: Upload APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: aariz-apks
+          path: |
+            app/build/outputs/apk/**/*.apk
+          if-no-files-found: error
