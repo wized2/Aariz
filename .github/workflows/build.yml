@@ -24,6 +24,7 @@ jobs:
       contents: write
     env:
       IS_RELEASE: ${{ github.event_name == 'push' && (startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main') }}
+      IS_TAG: ${{ startsWith(github.ref, 'refs/tags/v') }}
     steps:
       - uses: actions/checkout@v4
 
@@ -35,7 +36,7 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+          cache-read-only: ${{ github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/tags/') }}
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
@@ -56,9 +57,7 @@ jobs:
         run: |
           if [ -z "${RELEASE_KEYSTORE_BASE64:-}" ] || [ -z "${RELEASE_STORE_PASSWORD:-}" ] \
              || [ -z "${RELEASE_KEY_PASSWORD:-}" ] || [ -z "${RELEASE_KEY_ALIAS:-}" ]; then
-            if [ "$GITHUB_REPOSITORY" = "wized2/Aariz" ]; then
-              echo "::warning::No signing secrets yet — release APK will be debug-signed until secrets are set."
-            fi
+            echo "::warning::No signing secrets — release APK will be debug-signed."
             echo "signed=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -69,13 +68,30 @@ jobs:
       - name: Unit tests and debug build
         run: ./gradlew testDebugUnitTest assembleDebug --stacktrace
 
-      - name: Build release
+      - name: Build release (minify + shrink)
         env:
           RELEASE_STORE_FILE: ${{ steps.keys.outputs.signed == 'true' && format('{0}/release.jks', runner.temp) || '' }}
           RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
           RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
           RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
-        run: ./gradlew assembleRelease --stacktrace
+        run: |
+          ./gradlew assembleRelease --stacktrace
+          echo "=== release outputs ==="
+          find app/build/outputs/apk -type f -name '*.apk' -exec ls -lah {} \;
+
+      - name: Rename release APK
+        id: apk
+        run: |
+          SRC=$(find app/build/outputs/apk/release -name '*.apk' | head -1)
+          test -n "$SRC"
+          DEST="Aariz-${GITHUB_REF_NAME:-dev}.apk"
+          # strip refs/tags/ if present
+          TAG="${GITHUB_REF_NAME}"
+          DEST="Aariz-${TAG}.apk"
+          cp "$SRC" "$DEST"
+          echo "path=$DEST" >> "$GITHUB_OUTPUT"
+          echo "size=$(wc -c < "$DEST")" >> "$GITHUB_OUTPUT"
+          ls -lah "$DEST"
 
       - name: Upload APKs
         uses: actions/upload-artifact@v4
@@ -83,4 +99,24 @@ jobs:
           name: aariz-apks
           path: |
             app/build/outputs/apk/**/*.apk
+            Aariz-*.apk
           if-no-files-found: error
+
+      - name: Publish GitHub Release
+        if: env.IS_TAG == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ steps.apk.outputs.path }}
+          generate_release_notes: true
+          body: |
+            ## Aariz ${{ github.ref_name }}
+
+            Native Android AI chat by Project Endroid.
+
+            - Minify + resource shrink enabled
+            - Material 3 · Lucide icons · modern chat UI
+            - Modes: Chat · Web search · Image
+
+            Install the attached **release APK**.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

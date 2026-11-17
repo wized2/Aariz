@@ -1,4 +1,7 @@
--keepattributes *Annotation*
+-keepattributes *Annotation*,Signature,InnerClasses,EnclosingMethod
+-keep class com.endroid.aariz.** { *; }
 -dontwarn okhttp3.**
 -dontwarn okio.**
--keep class com.endroid.aariz.** { *; }
+-dontwarn org.bouncycastle.**
+-dontwarn org.conscrypt.**
+-dontwarn org.openjsse.**
