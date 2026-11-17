@@ -95,7 +95,7 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.androidx.datastore.preferences)
     // Lucide icon set for Compose
-    implementation("br.com.devsrsouza.compose.icons:lucide:1.1.1")
+    implementation("com.composables:icons-lucide:1.1.0")
     testImplementation(libs.junit)
     debugImplementation(libs.androidx.compose.ui.tooling.preview)
 }

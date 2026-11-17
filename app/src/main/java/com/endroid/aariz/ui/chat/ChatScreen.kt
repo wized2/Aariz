@@ -2,7 +2,6 @@ package com.endroid.aariz.ui.chat
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -45,19 +44,21 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import compose.icons.LucideIcons
-import compose.icons.lucide.Globe
-import compose.icons.lucide.Image
-import compose.icons.lucide.Menu
-import compose.icons.lucide.MessageSquare
-import compose.icons.lucide.Moon
-import compose.icons.lucide.Plus
-import compose.icons.lucide.Send
-import compose.icons.lucide.Sun
-import compose.icons.lucide.Trash2
+import com.composables.icons.lucide.Globe
+import com.composables.icons.lucide.Image
+import com.composables.icons.lucide.Lucide
+import com.composables.icons.lucide.Menu
+import com.composables.icons.lucide.MessageSquare
+import com.composables.icons.lucide.Moon
+import com.composables.icons.lucide.Plus
+import com.composables.icons.lucide.Send
+import com.composables.icons.lucide.Sun
+import com.composables.icons.lucide.Trash2
 import com.endroid.aariz.data.ChatMode
 import com.endroid.aariz.data.Message
 import com.endroid.aariz.data.ThemeMode
@@ -99,7 +100,7 @@ fun ChatScreen(vm: ChatViewModel) {
                         label = { Text("New chat") },
                         selected = false,
                         onClick = { vm.newChat() },
-                        icon = { Icon(LucideIcons.Plus, contentDescription = null) },
+                        icon = { Icon(Lucide.Plus, contentDescription = null) },
                     )
                     Spacer(Modifier.height(8.dp))
                     HorizontalDivider()
@@ -123,11 +124,11 @@ fun ChatScreen(vm: ChatViewModel) {
                             },
                             selected = c.id == state.activeId,
                             onClick = { vm.selectChat(c.id) },
-                            icon = { Icon(LucideIcons.MessageSquare, contentDescription = null) },
+                            icon = { Icon(Lucide.MessageSquare, contentDescription = null) },
                             badge = {
                                 IconButton(onClick = { vm.deleteChat(c.id) }) {
                                     Icon(
-                                        LucideIcons.Trash2,
+                                        Lucide.Trash2,
                                         contentDescription = "Delete",
                                         modifier = Modifier.size(16.dp),
                                     )
@@ -155,7 +156,7 @@ fun ChatScreen(vm: ChatViewModel) {
                                 if (drawerState.isClosed) drawerState.open() else drawerState.close()
                             }
                         }) {
-                            Icon(LucideIcons.Menu, contentDescription = "Menu")
+                            Icon(Lucide.Menu, contentDescription = "Menu")
                         }
                         Column(Modifier.weight(1f)) {
                             Text(
@@ -174,17 +175,15 @@ fun ChatScreen(vm: ChatViewModel) {
                             )
                         }
                         IconButton(onClick = { vm.cycleTheme() }) {
-                            Icon(
-                                when (state.themeMode) {
-                                    ThemeMode.DARK -> LucideIcons.Moon
-                                    ThemeMode.LIGHT -> LucideIcons.Sun
-                                    ThemeMode.SYSTEM -> LucideIcons.Sun
-                                },
-                                contentDescription = "Theme",
-                            )
+                            val icon: ImageVector = when (state.themeMode) {
+                                ThemeMode.DARK -> Lucide.Moon
+                                ThemeMode.LIGHT -> Lucide.Sun
+                                ThemeMode.SYSTEM -> Lucide.Sun
+                            }
+                            Icon(icon, contentDescription = "Theme")
                         }
                         IconButton(onClick = { vm.newChat() }) {
-                            Icon(LucideIcons.Plus, contentDescription = "New chat")
+                            Icon(Lucide.Plus, contentDescription = "New chat")
                         }
                     }
                 }
@@ -212,7 +211,7 @@ fun ChatScreen(vm: ChatViewModel) {
                             onClick = { vm.setMode(ChatMode.CHAT) },
                             label = { Text("Chat") },
                             leadingIcon = {
-                                Icon(LucideIcons.MessageSquare, null, Modifier.size(16.dp))
+                                Icon(Lucide.MessageSquare, null, Modifier.size(16.dp))
                             },
                         )
                         FilterChip(
@@ -220,7 +219,7 @@ fun ChatScreen(vm: ChatViewModel) {
                             onClick = { vm.setMode(ChatMode.WEB_SEARCH) },
                             label = { Text("Search") },
                             leadingIcon = {
-                                Icon(LucideIcons.Globe, null, Modifier.size(16.dp))
+                                Icon(Lucide.Globe, null, Modifier.size(16.dp))
                             },
                         )
                         FilterChip(
@@ -228,7 +227,7 @@ fun ChatScreen(vm: ChatViewModel) {
                             onClick = { vm.setMode(ChatMode.IMAGE) },
                             label = { Text("Image") },
                             leadingIcon = {
-                                Icon(LucideIcons.Image, null, Modifier.size(16.dp))
+                                Icon(Lucide.Image, null, Modifier.size(16.dp))
                             },
                         )
                     }
@@ -241,9 +240,9 @@ fun ChatScreen(vm: ChatViewModel) {
                             placeholder = { Text("Message Aariz…") },
                             shape = RoundedCornerShape(24.dp),
                             colors = TextFieldDefaults.colors(
-                                focusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
-                                unfocusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
-                                disabledIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
+                                focusedIndicatorColor = Color.Transparent,
+                                unfocusedIndicatorColor = Color.Transparent,
+                                disabledIndicatorColor = Color.Transparent,
                             ),
                             maxLines = 5,
                         )
@@ -257,7 +256,7 @@ fun ChatScreen(vm: ChatViewModel) {
                                 .background(MaterialTheme.colorScheme.primary),
                         ) {
                             Icon(
-                                LucideIcons.Send,
+                                Lucide.Send,
                                 contentDescription = "Send",
                                 tint = MaterialTheme.colorScheme.onPrimary,
                             )
