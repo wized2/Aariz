@@ -3,7 +3,7 @@ package com.endroid.aariz.ui.chat
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.endroid.aariz.data.ChatMode
+import com.endroid.aariz.data.AiModel
 import com.endroid.aariz.data.ChatRepository
 import com.endroid.aariz.data.Conversation
 import com.endroid.aariz.data.Message
@@ -23,7 +23,7 @@ data class ChatUiState(
     val input: String = "",
     val sending: Boolean = false,
     val error: String? = null,
-    val mode: ChatMode = ChatMode.CHAT,
+    val model: AiModel = AiModel.CHAT,
     val drawerOpen: Boolean = false,
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
 )
@@ -34,7 +34,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     private val _input = MutableStateFlow("")
     private val _sending = MutableStateFlow(false)
     private val _error = MutableStateFlow<String?>(null)
-    private val _mode = MutableStateFlow(ChatMode.CHAT)
+    private val _model = MutableStateFlow(AiModel.CHAT)
     private val _drawer = MutableStateFlow(false)
     private val _localChats = MutableStateFlow<List<Conversation>>(emptyList())
     private val _active = MutableStateFlow<String?>(null)
@@ -47,8 +47,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         Triple(chats to activeId, input to sending, error)
     }
 
-    val uiState: StateFlow<ChatUiState> = combine(core, _mode, _drawer, themeMode) {
-            coreVal, mode, drawer, theme ->
+    val uiState: StateFlow<ChatUiState> = combine(core, _model, _drawer, themeMode) {
+            coreVal, model, drawer, theme ->
         val (chatsActive, inputSending, error) = coreVal
         val (chats, activeId) = chatsActive
         val (input, sending) = inputSending
@@ -60,7 +60,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             input = input,
             sending = sending,
             error = error,
-            mode = mode,
+            model = model,
             drawerOpen = drawer,
             themeMode = theme,
         )
@@ -90,7 +90,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     fun onInput(s: String) { _input.value = s }
     fun clearError() { _error.value = null }
     fun setDrawer(open: Boolean) { _drawer.value = open }
-    fun setMode(mode: ChatMode) { _mode.value = mode }
+    fun setModel(model: AiModel) { _model.value = model }
 
     fun cycleTheme() {
         viewModelScope.launch {
@@ -142,11 +142,21 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         _input.value = ""
         appendMessage(activeId, userMsg, titleFrom(text))
 
-        if (_mode.value == ChatMode.IMAGE) {
-            _sending.value = true
-            val url = AarizApi.imageUrl(text)
-            appendMessage(activeId, Message(role = "assistant", text = "![Generated image]($url)"))
-            _sending.value = false
+        if (_model.value == AiModel.IMAGE) {
+            viewModelScope.launch {
+                _sending.value = true
+                _error.value = null
+                val url = AarizApi.imageUrl(text)
+                appendMessage(
+                    activeId,
+                    Message(
+                        role = "assistant",
+                        text = "Generated image",
+                        imageUrl = url,
+                    ),
+                )
+                _sending.value = false
+            }
             return
         }
 
@@ -157,7 +167,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             val result = AarizApi.chat(
                 prompt = text,
                 history = history.dropLast(1),
-                webSearch = _mode.value == ChatMode.WEB_SEARCH,
+                webSearch = false,
             )
             result.fold(
                 onSuccess = { reply ->

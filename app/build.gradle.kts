@@ -96,6 +96,7 @@ dependencies {
     implementation(libs.androidx.datastore.preferences)
     // Lucide icon set for Compose
     implementation("com.composables:icons-lucide:1.1.0")
+    implementation("io.coil-kt:coil-compose:2.7.0")
     testImplementation(libs.junit)
     debugImplementation(libs.androidx.compose.ui.tooling.preview)
 }

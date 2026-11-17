@@ -63,6 +63,7 @@ class ChatRepository(private val context: Context) {
                                     id = m.optString("id"),
                                     role = m.optString("role"),
                                     text = m.optString("text"),
+                                    imageUrl = m.optString("imageUrl").takeIf { it.isNotBlank() },
                                     timestamp = m.optLong("timestamp"),
                                 )
                             )
@@ -97,6 +98,7 @@ class ChatRepository(private val context: Context) {
                         .put("id", m.id)
                         .put("role", m.role)
                         .put("text", m.text)
+                        .put("imageUrl", m.imageUrl ?: "")
                         .put("timestamp", m.timestamp)
                 )
             }
