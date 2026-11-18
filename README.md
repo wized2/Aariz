@@ -22,10 +22,11 @@ Grab the latest **release APK** from [Releases](https://github.com/wized2/Aariz/
 
 ## Releasing
 
-1. Bump `versionName` / `versionCode` in `app/build.gradle.kts`.
-2. `git tag v<versionName> && git push origin v<versionName>`.
+Releases are automatic, like Fern. Every push to `main` runs tests, builds the minified APK, signs it with the release key, verifies the signature, and creates or updates the GitHub Release `v<versionName>` with the APK and a SHA-256 file.
 
-The **Release** workflow checks the tag matches the version, runs tests, builds the minified APK, verifies its signature, and publishes it with a SHA-256 file. Tags with a hyphen (for example `v1.1.0-beta.1`) become pre-releases. It needs the repository secrets `RELEASE_KEYSTORE_BASE64`, `RELEASE_STORE_PASSWORD`, `RELEASE_KEY_ALIAS` and `RELEASE_KEY_PASSWORD`; without them it stops instead of publishing a debug-signed APK. Regular CI (`build.yml`) only tests and builds.
+To ship a new version, bump `versionName` and `versionCode` in `app/build.gradle.kts` in your PR. Merging it publishes the new release. Pushing a `v*` tag also publishes.
+
+The official repo needs the secrets `RELEASE_KEYSTORE_BASE64`, `RELEASE_STORE_PASSWORD`, `RELEASE_KEY_ALIAS` and `RELEASE_KEY_PASSWORD`; without them the release step stops instead of publishing a debug-signed APK. Forks build with the debug key.
 
 ## License
 
