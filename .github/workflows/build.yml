@@ -1,30 +1,25 @@
-name: Build & Release
+name: CI
 
 on:
   push:
     branches: [main, beta]
-    tags: ['v*']
-    paths-ignore:
-      - '**.md'
-      - 'LICENSE'
-      - '.gitignore'
+    paths-ignore: ['**.md', 'LICENSE', '.gitignore']
   pull_request:
     branches: [main, beta]
+    paths-ignore: ['**.md', 'LICENSE', '.gitignore']
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: true
 
 jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 40
-    permissions:
-      contents: write
-    env:
-      IS_RELEASE: ${{ github.event_name == 'push' && (startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main') }}
-      IS_TAG: ${{ startsWith(github.ref, 'refs/tags/v') }}
     steps:
       - uses: actions/checkout@v4
 
@@ -36,87 +31,30 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          cache-read-only: ${{ github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/tags/') }}
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
         with:
           packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
 
-      - name: Make gradlew executable
-        run: chmod +x gradlew
-
-      - name: Decode release keystore
-        id: keys
-        if: env.IS_RELEASE == 'true'
-        env:
-          RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
-          RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
-          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
-          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+      - name: Unit tests, debug build, minified release build
         run: |
-          if [ -z "${RELEASE_KEYSTORE_BASE64:-}" ] || [ -z "${RELEASE_STORE_PASSWORD:-}" ] \
-             || [ -z "${RELEASE_KEY_PASSWORD:-}" ] || [ -z "${RELEASE_KEY_ALIAS:-}" ]; then
-            echo "::warning::No signing secrets — release APK will be debug-signed."
-            echo "signed=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          echo "$RELEASE_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
-          echo "Keystore OK: $(wc -c < "$RUNNER_TEMP/release.jks") bytes"
-          echo "signed=true" >> "$GITHUB_OUTPUT"
+          chmod +x gradlew
+          # No signing secrets here on purpose: CI builds are debug-signed. Real releases use release.yml.
+          ./gradlew testDebugUnitTest assembleDebug assembleRelease --stacktrace
 
-      - name: Unit tests and debug build
-        run: ./gradlew testDebugUnitTest assembleDebug --stacktrace
-
-      - name: Build release (minify + shrink)
-        env:
-          RELEASE_STORE_FILE: ${{ steps.keys.outputs.signed == 'true' && format('{0}/release.jks', runner.temp) || '' }}
-          RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
-          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
-          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
-        run: |
-          ./gradlew assembleRelease --stacktrace
-          echo "=== release outputs ==="
-          find app/build/outputs/apk -type f -name '*.apk' -exec ls -lah {} \;
-
-      - name: Rename release APK
-        id: apk
-        run: |
-          SRC=$(find app/build/outputs/apk/release -name '*.apk' | head -1)
-          test -n "$SRC"
-          DEST="Aariz-${GITHUB_REF_NAME:-dev}.apk"
-          # strip refs/tags/ if present
-          TAG="${GITHUB_REF_NAME}"
-          DEST="Aariz-${TAG}.apk"
-          cp "$SRC" "$DEST"
-          echo "path=$DEST" >> "$GITHUB_OUTPUT"
-          echo "size=$(wc -c < "$DEST")" >> "$GITHUB_OUTPUT"
-          ls -lah "$DEST"
+      - name: Upload test reports on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: app/build/reports/tests
+          if-no-files-found: ignore
 
       - name: Upload APKs
         uses: actions/upload-artifact@v4
         with:
-          name: aariz-apks
-          path: |
-            app/build/outputs/apk/**/*.apk
-            Aariz-*.apk
+          name: aariz-ci-apks
+          path: app/build/outputs/apk/**/*.apk
           if-no-files-found: error
-
-      - name: Publish GitHub Release
-        if: env.IS_TAG == 'true'
-        uses: softprops/action-gh-release@v2
-        with:
-          files: ${{ steps.apk.outputs.path }}
-          generate_release_notes: true
-          body: |
-            ## Aariz ${{ github.ref_name }}
-
-            Native Android AI chat by Project Endroid.
-
-            - Minify + resource shrink enabled
-            - Material 3 · Lucide icons · modern chat UI
-            - Modes: Chat · Web search · Image
-
-            Install the attached **release APK**.
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
