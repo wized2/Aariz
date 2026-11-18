@@ -5,6 +5,9 @@ Native Android AI chat by **Project Endroid** — companion to the [web app](htt
 ## Features
 
 - Modern chat UI (Compose · Material 3 · Lucide)
+- Replies render Markdown: bold, inline code, headings, lists and code blocks with a copy button
+- Copy any reply, stop a reply while it is generating, retry after an error
+- Tap-to-start prompt ideas on the empty chat
 - Chat · web search · image modes
 - Local history · light / dark / system theme
 - Release builds: **minify + shrink resources**

@@ -9,6 +9,7 @@ import com.endroid.aariz.data.Conversation
 import com.endroid.aariz.data.Message
 import com.endroid.aariz.data.ThemeMode
 import com.endroid.aariz.network.AarizApi
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -38,6 +39,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     private val _drawer = MutableStateFlow(false)
     private val _localChats = MutableStateFlow<List<Conversation>>(emptyList())
     private val _active = MutableStateFlow<String?>(null)
+    private var requestJob: Job? = null
 
     val themeMode: StateFlow<ThemeMode> = repo.themeMode
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ThemeMode.SYSTEM)
@@ -138,46 +140,53 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         val text = _input.value.trim()
         if (text.isEmpty() || _sending.value) return
         val activeId = _active.value ?: return
-        val userMsg = Message(role = "user", text = text)
         _input.value = ""
-        appendMessage(activeId, userMsg, titleFrom(text))
+        appendMessage(activeId, Message(role = "user", text = text), titleFrom(text))
+        request(activeId, text)
+    }
 
-        if (_model.value == AiModel.IMAGE) {
-            viewModelScope.launch {
-                _sending.value = true
-                _error.value = null
-                val url = AarizApi.imageUrl(text)
-                appendMessage(
-                    activeId,
-                    Message(
-                        role = "assistant",
-                        text = "Generated image",
-                        imageUrl = url,
-                    ),
-                )
-                _sending.value = false
-            }
-            return
-        }
+    /** Cancel the reply that is being generated. */
+    fun stop() {
+        requestJob?.cancel()
+    }
 
-        viewModelScope.launch {
+    /** Ask again for the last user message after a failure (does not add a new message). */
+    fun retry() {
+        if (_sending.value) return
+        val activeId = _active.value ?: return
+        val last = _localChats.value.find { it.id == activeId }?.messages?.lastOrNull() ?: return
+        if (last.role != "user") return
+        request(activeId, last.text)
+    }
+
+    /** The newest message of [activeId] must be the user message that [text] came from. */
+    private fun request(activeId: String, text: String) {
+        requestJob = viewModelScope.launch {
             _sending.value = true
             _error.value = null
-            val history = _localChats.value.find { it.id == activeId }?.messages.orEmpty()
-            val result = AarizApi.chat(
-                prompt = text,
-                history = history.dropLast(1),
-                webSearch = false,
-            )
-            result.fold(
-                onSuccess = { reply ->
-                    appendMessage(activeId, Message(role = "assistant", text = reply.ifBlank { "…" }))
-                },
-                onFailure = { e ->
-                    _error.value = e.message ?: "Something went wrong"
-                },
-            )
-            _sending.value = false
+            try {
+                if (_model.value == AiModel.IMAGE) {
+                    val url = AarizApi.imageUrl(text)
+                    appendMessage(
+                        activeId,
+                        Message(role = "assistant", text = "Generated image", imageUrl = url),
+                    )
+                } else {
+                    val history = _localChats.value.find { it.id == activeId }?.messages.orEmpty()
+                    AarizApi.chat(prompt = text, history = history.dropLast(1), webSearch = false).fold(
+                        onSuccess = { reply ->
+                            appendMessage(activeId, Message(role = "assistant", text = reply.ifBlank { "…" }))
+                        },
+                        onFailure = { e ->
+                            if (e !is kotlinx.coroutines.CancellationException) {
+                                _error.value = e.message ?: "Something went wrong"
+                            }
+                        },
+                    )
+                }
+            } finally {
+                _sending.value = false
+            }
         }
     }
 

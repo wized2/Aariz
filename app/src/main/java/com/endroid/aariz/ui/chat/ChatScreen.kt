@@ -41,6 +41,7 @@ import androidx.compose.material3.NavigationDrawerItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.DrawerValue
@@ -58,12 +59,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import com.composables.icons.lucide.Check
 import com.composables.icons.lucide.ChevronDown
+import com.composables.icons.lucide.Copy
 import com.composables.icons.lucide.Image
 import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.Menu
@@ -72,11 +77,13 @@ import com.composables.icons.lucide.Moon
 import com.composables.icons.lucide.Plus
 import com.composables.icons.lucide.Send
 import com.composables.icons.lucide.Sparkles
+import com.composables.icons.lucide.Square
 import com.composables.icons.lucide.Sun
 import com.composables.icons.lucide.Trash2
 import com.endroid.aariz.data.AiModel
 import com.endroid.aariz.data.Message
 import com.endroid.aariz.data.ThemeMode
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @Composable
@@ -203,6 +210,8 @@ fun ChatScreen(vm: ChatViewModel) {
                     onInput = vm::onInput,
                     onModel = vm::setModel,
                     onSend = vm::send,
+                    onStop = vm::stop,
+                    onRetry = vm::retry,
                 )
             },
         ) { padding ->
@@ -210,6 +219,7 @@ fun ChatScreen(vm: ChatViewModel) {
                 messages = state.messages,
                 sending = state.sending,
                 model = state.model,
+                onPick = vm::onInput,
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding),
@@ -227,6 +237,8 @@ private fun ComposerBar(
     onInput: (String) -> Unit,
     onModel: (AiModel) -> Unit,
     onSend: () -> Unit,
+    onStop: () -> Unit,
+    onRetry: () -> Unit,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     val canSend = input.isNotBlank() && !sending
@@ -239,12 +251,20 @@ private fun ComposerBar(
             .padding(horizontal = 16.dp, vertical = 12.dp)
     ) {
         AnimatedVisibility(visible = error != null, enter = fadeIn(), exit = fadeOut()) {
-            Text(
-                error.orEmpty(),
-                color = MaterialTheme.colorScheme.error,
-                style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.padding(bottom = 8.dp, start = 4.dp),
-            )
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 8.dp, start = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    error.orEmpty(),
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(onClick = onRetry) { Text("Retry") }
+            }
         }
 
         // Single composed input card (Claude-style)
@@ -372,22 +392,23 @@ private fun ComposerBar(
 
                     Spacer(Modifier.weight(1f))
 
+                    val active = canSend || sending
                     IconButton(
-                        onClick = onSend,
-                        enabled = canSend,
+                        onClick = if (sending) onStop else onSend,
+                        enabled = active,
                         modifier = Modifier
                             .size(40.dp)
                             .clip(CircleShape)
                             .background(
-                                if (canSend) MaterialTheme.colorScheme.primary
+                                if (active) MaterialTheme.colorScheme.primary
                                 else MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
                             ),
                     ) {
                         Icon(
-                            Lucide.Send,
-                            "Send",
+                            if (sending) Lucide.Square else Lucide.Send,
+                            if (sending) "Stop" else "Send",
                             Modifier.size(18.dp),
-                            tint = if (canSend) MaterialTheme.colorScheme.onPrimary
+                            tint = if (active) MaterialTheme.colorScheme.onPrimary
                             else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f),
                         )
                     }
@@ -402,6 +423,7 @@ private fun MessageList(
     messages: List<Message>,
     sending: Boolean,
     model: AiModel,
+    onPick: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val listState = rememberLazyListState()
@@ -417,7 +439,7 @@ private fun MessageList(
         verticalArrangement = Arrangement.spacedBy(20.dp),
     ) {
         if (messages.isEmpty() && !sending) {
-            item { EmptyHero() }
+            item { EmptyHero(model, onPick) }
         }
         items(messages, key = { it.id }) { msg ->
             MessageBlock(msg)
@@ -441,12 +463,25 @@ private fun MessageList(
     }
 }
 
+private val chatStarters = listOf(
+    "Explain how vaccines work in simple words",
+    "Write a polite follow-up email",
+    "Plan a 3-day beginner workout",
+    "Help me understand a Kotlin error",
+)
+
+private val imageStarters = listOf(
+    "A cozy cabin in a snowy forest at dusk",
+    "A watercolor fox reading a book",
+    "A minimal poster of a mountain sunrise",
+)
+
 @Composable
-private fun EmptyHero() {
+private fun EmptyHero(model: AiModel, onPick: (String) -> Unit) {
     Column(
         Modifier
             .fillMaxWidth()
-            .padding(top = 72.dp),
+            .padding(top = 56.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text(
@@ -461,6 +496,26 @@ private fun EmptyHero() {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
         )
+        Spacer(Modifier.height(28.dp))
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            (if (model == AiModel.IMAGE) imageStarters else chatStarters).forEach { prompt ->
+                Surface(
+                    onClick = { onPick(prompt) },
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.surface,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(16.dp)),
+                ) {
+                    Text(
+                        prompt,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -522,13 +577,36 @@ private fun MessageBlock(msg: Message) {
                         )
                     }
                 } else {
-                    Text(
-                        msg.text,
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
+                    MarkdownText(msg.text)
+                    CopyReplyButton(msg.text)
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun CopyReplyButton(text: String) {
+    val clipboard = LocalClipboardManager.current
+    var copied by remember { mutableStateOf(false) }
+    LaunchedEffect(copied) {
+        if (copied) {
+            delay(1500)
+            copied = false
+        }
+    }
+    IconButton(
+        onClick = {
+            clipboard.setText(AnnotatedString(text))
+            copied = true
+        },
+        modifier = Modifier.size(36.dp),
+    ) {
+        Icon(
+            if (copied) Lucide.Check else Lucide.Copy,
+            if (copied) "Copied" else "Copy reply",
+            Modifier.size(16.dp),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
