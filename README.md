@@ -8,6 +8,9 @@ Native Android AI chat by **Project Endroid** — companion to the [web app](htt
 - Replies render Markdown: bold, inline code, headings, lists and code blocks with a copy button
 - Copy any reply, stop a reply while it is generating, retry after an error
 - Tap-to-start prompt ideas on the empty chat
+- Run JavaScript code blocks in a sandbox (no network, 5 s limit) with a Run button
+- Regenerate, share, scroll-to-latest, chat search
+- Sliding Chat / Image toggle, up-arrow send button, shimmer while images load
 - Chat · web search · image modes
 - Local history · light / dark / system theme
 - Release builds: **minify + shrink resources**

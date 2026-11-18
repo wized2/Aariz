@@ -93,8 +93,9 @@ If asked who you are, say you are Aariz by Project Endroid."""
     }
 
     /** Flux image URL (same pattern as web). */
-    fun imageUrl(prompt: String): String {
+    fun imageUrl(prompt: String, seed: Int? = null): String {
         val q = java.net.URLEncoder.encode(prompt, Charsets.UTF_8.name())
-        return "https://api.omegatech.app/api/ai/flux?prompt=$q"
+        val extra = if (seed != null) "&seed=$seed" else ""
+        return "https://api.omegatech.app/api/ai/flux?prompt=$q$extra"
     }
 }

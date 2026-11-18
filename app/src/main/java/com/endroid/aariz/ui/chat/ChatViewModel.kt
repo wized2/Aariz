@@ -156,17 +156,37 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         val activeId = _active.value ?: return
         val last = _localChats.value.find { it.id == activeId }?.messages?.lastOrNull() ?: return
         if (last.role != "user") return
-        request(activeId, last.text)
+        request(activeId, last.text, image = false)
+    }
+
+    /** Drop the last assistant reply and ask for a fresh one. */
+    fun regenerate() {
+        if (_sending.value) return
+        val activeId = _active.value ?: return
+        val chat = _localChats.value.find { it.id == activeId } ?: return
+        val last = chat.messages.lastOrNull() ?: return
+        if (last.role != "assistant") return
+        val user = chat.messages.dropLast(1).lastOrNull { it.role == "user" } ?: return
+        val kept = chat.messages.dropLast(1)
+        val list = _localChats.value.map { if (it.id == activeId) it.copy(messages = kept) else it }
+        _localChats.value = list
+        viewModelScope.launch { repo.saveChats(list) }
+        request(activeId, user.text, image = last.imageUrl != null, seed = (1..999_999).random())
     }
 
     /** The newest message of [activeId] must be the user message that [text] came from. */
-    private fun request(activeId: String, text: String) {
+    private fun request(
+        activeId: String,
+        text: String,
+        image: Boolean = _model.value == AiModel.IMAGE,
+        seed: Int? = null,
+    ) {
         requestJob = viewModelScope.launch {
             _sending.value = true
             _error.value = null
             try {
-                if (_model.value == AiModel.IMAGE) {
-                    val url = AarizApi.imageUrl(text)
+                if (image) {
+                    val url = AarizApi.imageUrl(text, seed)
                     appendMessage(
                         activeId,
                         Message(role = "assistant", text = "Generated image", imageUrl = url),
