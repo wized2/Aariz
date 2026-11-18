@@ -193,7 +193,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                     )
                 } else {
                     val history = _localChats.value.find { it.id == activeId }?.messages.orEmpty()
-                    AarizApi.chat(prompt = text, history = history.dropLast(1), webSearch = false).fold(
+                    AarizApi.chat(prompt = text, history = history.dropLast(1), webSearch = true).fold(
                         onSuccess = { reply ->
                             appendMessage(activeId, Message(role = "assistant", text = reply.ifBlank { "…" }))
                         },
