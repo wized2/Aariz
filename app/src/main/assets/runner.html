@@ -1,0 +1,147 @@
+<!doctype html>
+<html><head><meta charset="utf-8"></head><body><script>
+(function () {
+  var MAX_LINES = 400, MAX_CHARS = 20000;
+  var out = [], size = 0, truncated = false, indent = '';
+  var pending = 0, mainDone = false, finished = false;
+  var live = {}, intervals = [], lastTimer;
+  var st = window.setTimeout, ct = window.clearTimeout, si = window.setInterval, ci = window.clearInterval;
+
+  function str(x) {
+    if (typeof x === 'string') return x;
+    if (x === undefined) return 'undefined';
+    if (typeof x === 'function') return String(x);
+    if (typeof x === 'symbol' || typeof x === 'bigint') return String(x) + (typeof x === 'bigint' ? 'n' : '');
+    if (x instanceof Error) return String(x);
+    if (x instanceof Map) x = { Map: Array.from(x) };
+    else if (x instanceof Set) x = { Set: Array.from(x) };
+    try {
+      var seen = [];
+      var rep = function (k, v) {
+        if (typeof v === 'bigint') return v + 'n';
+        if (typeof v === 'function') return '[Function]';
+        if (v && typeof v === 'object') {
+          if (seen.indexOf(v) >= 0) return '[Circular]';
+          seen.push(v);
+        }
+        return v;
+      };
+      var compact = JSON.stringify(x, rep);
+      if (compact === undefined) return String(x);
+      if (compact.length <= 72) return compact;
+      seen = [];
+      return JSON.stringify(x, rep, 2);
+    } catch (e) { return String(x); }
+  }
+  function fmt(args) { return Array.prototype.map.call(args, str).join(' '); }
+  function put(text) {
+    if (truncated) return;
+    var lines = String(text).split('\n');
+    for (var i = 0; i < lines.length; i++) {
+      if (out.length >= MAX_LINES || size > MAX_CHARS) { out.push('… output truncated'); truncated = true; return; }
+      var l = indent + lines[i];
+      out.push(l); size += l.length + 1;
+    }
+  }
+
+  console.log = console.info = console.debug = function () { put(fmt(arguments)); };
+  console.warn = function () { put('Warning: ' + fmt(arguments)); };
+  console.error = function () { put('Error: ' + fmt(arguments)); };
+  console.dir = function (x) { put(str(x)); };
+  console.assert = function (c) { if (!c) put('Assertion failed: ' + fmt(Array.prototype.slice.call(arguments, 1))); };
+  console.group = function () { if (arguments.length) put(fmt(arguments)); indent += '  '; };
+  console.groupEnd = function () { indent = indent.slice(2); };
+  console.clear = function () { out.length = 0; size = 0; };
+  console.table = function (d) {
+    try {
+      if (d === null || typeof d !== 'object') { put(str(d)); return; }
+      var cols = ['(index)'], rows = [];
+      var keys = Array.isArray(d) ? d.map(function (_, i) { return i; }) : Object.keys(d);
+      keys.forEach(function (k) {
+        var v = d[k], r = { '(index)': String(k) };
+        if (v !== null && typeof v === 'object') {
+          Object.keys(v).forEach(function (c) {
+            if (cols.indexOf(c) < 0) cols.push(c);
+            r[c] = str(v[c]);
+          });
+        } else {
+          if (cols.indexOf('Values') < 0) cols.push('Values');
+          r.Values = str(v);
+        }
+        rows.push(r);
+      });
+      var w = cols.map(function (c) {
+        return Math.max.apply(null, [c.length].concat(rows.map(function (r) { return (r[c] || '').length; })));
+      });
+      var line = function (cells) {
+        return '| ' + cells.map(function (x, i) {
+          x = x || '';
+          while (x.length < w[i]) x += ' ';
+          return x;
+        }).join(' | ') + ' |';
+      };
+      put(line(cols));
+      put('|' + w.map(function (n) { return new Array(n + 3).join('-'); }).join('|') + '|');
+      rows.forEach(function (r) { put(line(cols.map(function (c) { return r[c]; }))); });
+    } catch (e) { put(fmt(arguments)); }
+  };
+
+  window.setTimeout = function (f) {
+    var args = Array.prototype.slice.call(arguments, 2), ms = arguments[1] || 0;
+    pending++;
+    var id = st(function () {
+      delete live[id];
+      try { if (typeof f === 'function') f.apply(null, args); } catch (e) { put('Error: ' + e); }
+      pending--; tick();
+    }, Math.min(ms, 3000));
+    live[id] = 1;
+    lastTimer = id;
+    return id;
+  };
+  window.clearTimeout = function (id) {
+    if (live[id]) { delete live[id]; pending--; tick(); }
+    ct(id);
+  };
+  window.setInterval = function (f, ms) {
+    var args = Array.prototype.slice.call(arguments, 2);
+    var id = si(function () { try { if (typeof f === 'function') f.apply(null, args); } catch (e) { put('Error: ' + e); } }, Math.max(ms || 0, 10));
+    intervals.push(id);
+    lastTimer = id;
+    return id;
+  };
+  window.clearInterval = function (id) { ci(id); };
+  window.addEventListener('unhandledrejection', function (e) {
+    put('Error: ' + (e.reason && e.reason.message ? e.reason.message : str(e.reason)));
+  });
+  window.onerror = function (m) { put('Error: ' + m); };
+
+  function finish(note) {
+    if (finished) return;
+    finished = true;
+    intervals.forEach(function (i) { ci(i); });
+    if (note) put(note);
+    Aariz.done(out.join('\n'));
+  }
+  function tick() { if (mainDone && pending === 0) st(function () { if (pending === 0) finish(); }, 80); }
+  function end() { mainDone = true; tick(); }
+  // report what we have before the native 5 s kill
+  st(function () { finish('(stopped: still running after 4 s)'); }, 4000);
+
+  var code = __CODE__;
+  var r;
+  function show(v) { if (v !== undefined && v !== lastTimer) put('→ ' + str(v)); }
+  function fail(e) { put('Error: ' + (e && e.message ? e.message : str(e))); }
+  try {
+    r = (0, eval)(code);
+  } catch (e) {
+    if (e instanceof SyntaxError && /await|async|return/i.test(String(e.message))) {
+      try { r = (0, eval)('(async function(){' + code + '\n})()'); }
+      catch (e2) { fail(e2); end(); return; }
+    } else { fail(e); end(); return; }
+  }
+  if (r && typeof r.then === 'function') {
+    pending++;
+    r.then(function (v) { show(v); pending--; end(); }, function (e) { fail(e); pending--; end(); });
+  } else { show(r); end(); }
+})();
+</script></body></html>

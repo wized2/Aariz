@@ -50,6 +50,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.material3.Button
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -97,16 +100,19 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import coil.compose.SubcomposeAsyncImage
+import coil.compose.SubcomposeAsyncImageContent
 import coil.request.ImageRequest
 import com.composables.icons.lucide.Check
 import com.composables.icons.lucide.ArrowDown
 import com.composables.icons.lucide.ArrowUp
 import com.composables.icons.lucide.Copy
+import com.composables.icons.lucide.Download
 import com.composables.icons.lucide.Image
 import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.Menu
 import com.composables.icons.lucide.MessageSquare
 import com.composables.icons.lucide.Moon
+import com.composables.icons.lucide.Pencil
 import com.composables.icons.lucide.Plus
 import com.composables.icons.lucide.RefreshCw
 import com.composables.icons.lucide.Search
@@ -117,6 +123,7 @@ import com.composables.icons.lucide.Sun
 import com.composables.icons.lucide.Trash2
 import com.endroid.aariz.data.AiModel
 import com.endroid.aariz.data.Message
+import com.endroid.aariz.network.ApiLogic
 import com.endroid.aariz.data.ThemeMode
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -276,6 +283,7 @@ fun ChatScreen(vm: ChatViewModel) {
                 model = state.model,
                 onPick = vm::onInput,
                 onRegenerate = vm::regenerate,
+                onEdit = vm::editAndResend,
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding),
@@ -390,8 +398,10 @@ private fun MessageList(
     model: AiModel,
     onPick: (String) -> Unit,
     onRegenerate: () -> Unit,
+    onEdit: (String, String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    var editingId by remember { mutableStateOf<String?>(null) }
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     val total = messages.size + if (sending) 1 else 0
@@ -413,6 +423,14 @@ private fun MessageList(
                     msg = msg,
                     canRegenerate = index == messages.lastIndex && !sending && msg.role == "assistant",
                     onRegenerate = onRegenerate,
+                    canEdit = !sending,
+                    editing = editingId == msg.id,
+                    onStartEdit = { editingId = msg.id },
+                    onCancelEdit = { editingId = null },
+                    onSaveEdit = { text ->
+                        editingId = null
+                        onEdit(msg.id, text)
+                    },
                     modifier = Modifier.animateItem(),
                 )
             }
@@ -523,6 +541,11 @@ private fun MessageBlock(
     msg: Message,
     canRegenerate: Boolean,
     onRegenerate: () -> Unit,
+    canEdit: Boolean,
+    editing: Boolean,
+    onStartEdit: () -> Unit,
+    onCancelEdit: () -> Unit,
+    onSaveEdit: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val isUser = msg.role == "user"
@@ -539,18 +562,27 @@ private fun MessageBlock(
             )
         }
 
-        if (isUser) {
+        if (isUser && editing) {
+            EditBox(msg.text, onCancelEdit, onSaveEdit)
+        } else if (isUser) {
             Surface(
                 color = MaterialTheme.colorScheme.surfaceVariant,
                 shape = RoundedCornerShape(18.dp),
                 modifier = Modifier.widthIn(max = 340.dp),
             ) {
-                Text(
-                    msg.text,
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                )
+                SelectionContainer {
+                    Text(
+                        msg.text,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                    )
+                }
+            }
+            if (canEdit) {
+                Row(Modifier.padding(top = 2.dp)) {
+                    ActionIcon(icon = Lucide.Pencil, description = "Edit message", onClick = onStartEdit)
+                }
             }
         } else {
             Column(Modifier.widthIn(max = 520.dp)) {
@@ -558,11 +590,13 @@ private fun MessageBlock(
                     GeneratedImage(msg.imageUrl, msg.text)
                     if (msg.text.isNotBlank() && msg.text != "Generated image") {
                         Spacer(Modifier.height(8.dp))
-                        Text(
-                            msg.text,
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurface,
-                        )
+                        SelectionContainer {
+                            Text(
+                                msg.text,
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                        }
                     }
                 } else {
                     MarkdownText(msg.text)
@@ -621,19 +655,83 @@ private fun ActionIcon(icon: ImageVector, description: String, onClick: () -> Un
     }
 }
 
-/** Generated image with a shimmering placeholder while it loads, and tap-to-retry on failure. */
+/** Inline editor for one of your own messages. Saving cuts the chat here and asks again. */
+@Composable
+private fun EditBox(initial: String, onCancel: () -> Unit, onSave: (String) -> Unit) {
+    var text by remember { mutableStateOf(initial) }
+    Column(Modifier.fillMaxWidth()) {
+        OutlinedTextField(
+            value = text,
+            onValueChange = { text = it },
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            minLines = 1,
+            maxLines = 8,
+        )
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(top = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+        ) {
+            TextButton(onClick = onCancel) { Text("Cancel") }
+            Button(
+                onClick = { onSave(text) },
+                enabled = text.isNotBlank(),
+            ) { Text("Save & resend") }
+        }
+    }
+}
+
+/**
+ * Generated image with a shimmering placeholder while it loads. If the first source fails the
+ * backup source is tried, then tap-to-retry. A download button appears once it has loaded.
+ */
 @Composable
 private fun GeneratedImage(url: String, description: String) {
     var attempt by remember { mutableIntStateOf(0) }
+    var sourceIndex by remember(url) { mutableIntStateOf(0) }
     val context = LocalContext.current
-    key(attempt) {
+    val sources = remember(url) { listOfNotNull(url, ApiLogic.fallbackImageUrl(url)) }
+    val current = sources[sourceIndex.coerceIn(0, sources.lastIndex)]
+    key(attempt, current) {
         SubcomposeAsyncImage(
-            model = ImageRequest.Builder(context).data(url).crossfade(350).build(),
+            model = ImageRequest.Builder(context).data(current).crossfade(350).build(),
             contentDescription = description,
             contentScale = ContentScale.Crop,
             loading = { ImagePlaceholder("Creating your image…", loading = true) },
+            success = {
+                Box(Modifier.fillMaxSize()) {
+                    SubcomposeAsyncImageContent()
+                    Surface(
+                        onClick = { ImageSaver.save(context, current) },
+                        shape = CircleShape,
+                        color = Color.Black.copy(alpha = 0.55f),
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(10.dp),
+                    ) {
+                        Icon(
+                            Lucide.Download,
+                            "Download image",
+                            Modifier
+                                .padding(10.dp)
+                                .size(20.dp),
+                            tint = Color.White,
+                        )
+                    }
+                }
+            },
             error = {
-                ImagePlaceholder("Couldn’t load the image. Tap to retry", loading = false) { attempt++ }
+                if (sourceIndex < sources.lastIndex) {
+                    LaunchedEffect(Unit) { sourceIndex += 1 }
+                    ImagePlaceholder("Trying another source…", loading = true)
+                } else {
+                    ImagePlaceholder("Couldn’t load the image. Tap to retry", loading = false) {
+                        sourceIndex = 0
+                        attempt++
+                    }
+                }
             },
             modifier = Modifier
                 .fillMaxWidth()

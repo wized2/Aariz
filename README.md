@@ -5,10 +5,12 @@ Native Android AI chat by **Project Endroid** — companion to the [web app](htt
 ## Features
 
 - Modern chat UI (Compose · Material 3 · Lucide)
-- Replies render Markdown: bold, inline code, headings, lists and code blocks with a copy button
+- Full Markdown in replies: bold, italic, strikethrough, headings, nested and task lists, tables, quotes, links, rules and code blocks with a copy button
 - Copy any reply, stop a reply while it is generating, retry after an error
 - Tap-to-start prompt ideas on the empty chat
-- Run JavaScript code blocks in a sandbox (no network, 5 s limit) with a Run button
+- Run code blocks with a Run button: JavaScript on the device in a sandbox (await, timers, console.table, no network, 4 s limit); JSON formatting; HTML and SVG preview; Python, C, C++, Java, Go, Rust, Ruby, PHP, Bash, Kotlin, TypeScript and more online via Judge0 (asks first)
+- Select and copy any part of a message; edit your own messages and resend
+- Download generated images to Pictures/Aariz (with a backup image source if the first fails)
 - Regenerate, share, scroll-to-latest, chat search
 - Sliding Chat / Image toggle, up-arrow send button, shimmer while images load
 - Chat · web search · image modes

@@ -13,12 +13,6 @@ import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
 object AarizApi {
-    private const val SYSTEM = """You are Aariz, a fast, clear AI assistant by Project Endroid (Mudasir Wazir).
-Reply in short, useful, mobile-readable paragraphs.
-Be direct. Prefer plain language. Use markdown sparingly.
-Use tools when helpful: calculate for exact math/logic; web_search (Wikipedia) for facts.
-If asked who you are, say you are Aariz by Project Endroid."""
-
     private val client = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(90, TimeUnit.SECONDS)
@@ -33,6 +27,7 @@ If asked who you are, say you are Aariz by Project Endroid."""
         webSearch: Boolean,
     ): Result<String> = withContext(Dispatchers.IO) {
         try {
+            val system = ApiLogic.systemPrompt(java.time.LocalDate.now().toString())
             val hist = JSONArray()
             history.takeLast(12).forEach { m ->
                 hist.put(
@@ -43,9 +38,9 @@ If asked who you are, say you are Aariz by Project Endroid."""
             }
             val payload = JSONObject()
                 .put("prompt", prompt)
-                .put("system", SYSTEM)
-                .put("system_instruction", SYSTEM)
-                .put("instructions", SYSTEM)
+                .put("system", system)
+                .put("system_instruction", system)
+                .put("instructions", system)
                 .put("web_search", webSearch)
                 .put("history", hist)
                 .put("feature", "")
@@ -94,9 +89,5 @@ If asked who you are, say you are Aariz by Project Endroid."""
     }
 
     /** Flux image URL (same pattern as web). */
-    fun imageUrl(prompt: String, seed: Int? = null): String {
-        val q = java.net.URLEncoder.encode(prompt, Charsets.UTF_8.name())
-        val extra = if (seed != null) "&seed=$seed" else ""
-        return "https://api.omegatech.app/api/ai/flux?prompt=$q$extra"
-    }
+    fun imageUrl(prompt: String, seed: Int? = null): String = ApiLogic.imageUrl(prompt, seed)
 }
