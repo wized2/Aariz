@@ -100,7 +100,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import coil.compose.SubcomposeAsyncImage
-import coil.compose.SubcomposeAsyncImageContent
 import coil.request.ImageRequest
 import com.composables.icons.lucide.Check
 import com.composables.icons.lucide.ArrowDown
@@ -694,50 +693,54 @@ private fun GeneratedImage(url: String, description: String) {
     val context = LocalContext.current
     val sources = remember(url) { listOfNotNull(url, ApiLogic.fallbackImageUrl(url)) }
     val current = sources[sourceIndex.coerceIn(0, sources.lastIndex)]
-    key(attempt, current) {
-        SubcomposeAsyncImage(
-            model = ImageRequest.Builder(context).data(current).crossfade(350).build(),
-            contentDescription = description,
-            contentScale = ContentScale.Crop,
-            loading = { ImagePlaceholder("Creating your image…", loading = true) },
-            success = {
-                Box(Modifier.fillMaxSize()) {
-                    SubcomposeAsyncImageContent()
-                    Surface(
-                        onClick = { ImageSaver.save(context, current) },
-                        shape = CircleShape,
-                        color = Color.Black.copy(alpha = 0.55f),
-                        modifier = Modifier
-                            .align(Alignment.TopEnd)
-                            .padding(10.dp),
-                    ) {
-                        Icon(
-                            Lucide.Download,
-                            "Download image",
-                            Modifier
-                                .padding(10.dp)
-                                .size(20.dp),
-                            tint = Color.White,
-                        )
+    var loaded by remember(attempt, current) { mutableStateOf(false) }
+    val shape = RoundedCornerShape(16.dp)
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .aspectRatio(1f)
+            .clip(shape),
+    ) {
+        key(attempt, current) {
+            SubcomposeAsyncImage(
+                model = ImageRequest.Builder(context).data(current).crossfade(350).build(),
+                contentDescription = description,
+                contentScale = ContentScale.Crop,
+                onSuccess = { loaded = true },
+                loading = { ImagePlaceholder("Creating your image…", loading = true) },
+                error = {
+                    if (sourceIndex < sources.lastIndex) {
+                        LaunchedEffect(Unit) { sourceIndex += 1 }
+                        ImagePlaceholder("Trying another source…", loading = true)
+                    } else {
+                        ImagePlaceholder("Couldn’t load the image. Tap to retry", loading = false) {
+                            sourceIndex = 0
+                            attempt++
+                        }
                     }
-                }
-            },
-            error = {
-                if (sourceIndex < sources.lastIndex) {
-                    LaunchedEffect(Unit) { sourceIndex += 1 }
-                    ImagePlaceholder("Trying another source…", loading = true)
-                } else {
-                    ImagePlaceholder("Couldn’t load the image. Tap to retry", loading = false) {
-                        sourceIndex = 0
-                        attempt++
-                    }
-                }
-            },
-            modifier = Modifier
-                .fillMaxWidth()
-                .aspectRatio(1f)
-                .clip(RoundedCornerShape(16.dp)),
-        )
+                },
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
+        if (loaded) {
+            Surface(
+                onClick = { ImageSaver.save(context, current) },
+                shape = CircleShape,
+                color = Color.Black.copy(alpha = 0.55f),
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(10.dp),
+            ) {
+                Icon(
+                    Lucide.Download,
+                    "Download image",
+                    Modifier
+                        .padding(10.dp)
+                        .size(20.dp),
+                    tint = Color.White,
+                )
+            }
+        }
     }
 }
 
