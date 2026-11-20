@@ -11,58 +11,45 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import org.json.JSONArray
+import org.json.JSONObject
+import org.json.JSONTokener
 import java.io.ByteArrayInputStream
 import kotlin.coroutines.resume
 
 /**
- * Runs small JavaScript snippets from code blocks inside a locked-down WebView:
- * no network, no file access, no access to the app, killed after a few seconds.
+ * Runs code blocks. JavaScript runs locally inside a locked-down WebView (no network, no file
+ * access, no access to the app, killed after a few seconds). The sandbox page lives in
+ * assets/runner.html and supports await, timers, console.table / group, and prints the value
+ * of the last expression.
  */
 object CodeRunner {
     private const val TIMEOUT_MS = 5_000L
-    private const val MAX_OUTPUT = 4_000
+    private const val MAX_OUTPUT = 6_000
 
-    private val runnable = setOf("js", "javascript", "mjs", "node")
+    @Volatile
+    private var cachedTemplate: String? = null
 
-    fun isRunnable(lang: String): Boolean = lang.trim().lowercase() in runnable
+    private fun template(context: Context): String =
+        cachedTemplate ?: context.assets.open("runner.html").bufferedReader().use { it.readText() }
+            .also { cachedTemplate = it }
 
-    /** Quote [s] as a JavaScript string literal that is safe inside an inline <script>. */
-    internal fun jsString(s: String): String {
-        val sb = StringBuilder("\"")
-        for (c in s) {
-            when (c) {
-                '\\' -> sb.append("\\\\")
-                '"' -> sb.append("\\\"")
-                '\n' -> sb.append("\\n")
-                '\r' -> sb.append("\\r")
-                '\t' -> sb.append("\\t")
-                '<' -> sb.append("\\u003c")
-                ' ' -> sb.append("\\u2028")
-                ' ' -> sb.append("\\u2029")
-                else -> if (c < ' ') sb.append(String.format("\\u%04x", c.code)) else sb.append(c)
-            }
+    /** Pretty print JSON, or say what is wrong with it. */
+    fun formatJson(code: String): String = try {
+        when (val v = JSONTokener(code.trim()).nextValue()) {
+            is JSONObject -> v.toString(2)
+            is JSONArray -> v.toString(2)
+            else -> v.toString()
         }
-        return sb.append('"').toString()
+    } catch (e: Exception) {
+        "Invalid JSON: ${e.message}"
     }
 
-    internal fun buildHtml(code: String): String =
-        "<!doctype html><html><body><script>" +
-            "var __o=[];" +
-            "function __f(a){return Array.prototype.map.call(a,function(x){" +
-            "if(typeof x==='string')return x;" +
-            "try{return JSON.stringify(x)}catch(e){return String(x)}}).join(' ')}" +
-            "console.log=console.info=console.warn=console.debug=function(){__o.push(__f(arguments))};" +
-            "console.error=function(){__o.push('Error: '+__f(arguments))};" +
-            "window.onerror=function(m){__o.push('Error: '+m)};" +
-            "try{var __r=(0,eval)(" + jsString(code) + ");" +
-            "if(__r!==undefined)__o.push('\\u2192 '+__f([__r]))}catch(e){__o.push('Error: '+e)}" +
-            "setTimeout(function(){Aariz.done(__o.join('\\n'))},400);" +
-            "</script></body></html>"
-
     @SuppressLint("SetJavaScriptEnabled")
-    suspend fun run(context: Context, code: String): String = withContext(Dispatchers.Main) {
+    suspend fun runJs(context: Context, code: String): String = withContext(Dispatchers.Main) {
         var web: WebView? = null
         try {
+            val html = RunLogic.buildHtml(template(context), code)
             val out = withTimeoutOrNull(TIMEOUT_MS) {
                 suspendCancellableCoroutine<String> { cont ->
                     val view = WebView(context.applicationContext)
@@ -90,11 +77,10 @@ object CodeRunner {
                         },
                         "Aariz",
                     )
-                    view.loadDataWithBaseURL(null, buildHtml(code), "text/html", "utf-8", null)
+                    view.loadDataWithBaseURL(null, html, "text/html", "utf-8", null)
                 }
             }
-            val text = out ?: "Timed out after ${TIMEOUT_MS / 1000} s"
-            text.ifBlank { "(no output)" }.take(MAX_OUTPUT)
+            (out ?: "Timed out after ${TIMEOUT_MS / 1000} s").ifBlank { "(no output)" }.take(MAX_OUTPUT)
         } finally {
             web?.destroy()
         }

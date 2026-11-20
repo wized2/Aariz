@@ -156,7 +156,30 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         val activeId = _active.value ?: return
         val last = _localChats.value.find { it.id == activeId }?.messages?.lastOrNull() ?: return
         if (last.role != "user") return
-        request(activeId, last.text, image = false)
+        request(activeId, last.text)
+    }
+
+    /**
+     * Replace the text of one of your messages, drop everything after it and ask again.
+     * An image reply stays an image request; otherwise the current mode decides.
+     */
+    fun editAndResend(messageId: String, newText: String) {
+        val text = newText.trim()
+        if (text.isEmpty() || _sending.value) return
+        val activeId = _active.value ?: return
+        val chat = _localChats.value.find { it.id == activeId } ?: return
+        val index = chat.messages.indexOfFirst { it.id == messageId }
+        if (index < 0 || chat.messages[index].role != "user") return
+        val next = chat.messages.getOrNull(index + 1)
+        val image = if (next != null) next.imageUrl != null else _model.value == AiModel.IMAGE
+        val kept = chat.messages.take(index) + chat.messages[index].copy(text = text)
+        val title = if (index == 0) titleFrom(text) else chat.title
+        val list = _localChats.value.map {
+            if (it.id == activeId) it.copy(messages = kept, title = title, updatedAt = System.currentTimeMillis()) else it
+        }
+        _localChats.value = list
+        viewModelScope.launch { repo.saveChats(list) }
+        request(activeId, text, image = image)
     }
 
     /** Drop the last assistant reply and ask for a fresh one. */
